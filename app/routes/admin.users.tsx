@@ -1,10 +1,10 @@
 import { Form, Link, redirect, useLoaderData } from 'react-router'
-import { sendEmail } from 'email'
+import { platformInviteEmail, sendEmail } from 'email'
 
 import { requireAdmin } from '../auth/session.server'
 import { DeleteUserButton } from '../components/admin/delete-user-button'
 import { getSystemAgent } from '../data/agents.server'
-import { deactivateUser,deleteUserCompletely } from '../data/user-admin.server'
+import { deactivateUser, deleteUserCompletely } from '../data/user-admin.server'
 import type { Route } from './+types/admin.users'
 
 export const loader = async ({ request, context }: Route.LoaderArgs) => {
@@ -43,16 +43,16 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
     })
 
     const appUrl = env.APP_URL || new URL(request.url).origin
+    const inviteUrl = `${appUrl}/invite/${token}`
+    const emailContent = platformInviteEmail({ inviteUrl, invitedByEmail: admin.email })
 
     await sendEmail(
       {
         to: email,
-
-        subject: 'You are invited to Roadmaps',
-
-        html: `<p><a href="${appUrl}/invite/${token}">Accept invite</a></p>`,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
       },
-
       env,
     )
   }

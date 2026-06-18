@@ -1,4 +1,4 @@
-import { Form, Link, redirect, useLoaderData } from 'react-router'
+import { Form, Link, redirect, useActionData } from 'react-router'
 import { verifyPassword } from 'utils/password'
 
 import { createUserSession, getActiveSessionUser } from '../auth/session.server'
@@ -26,7 +26,9 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
 
   const userResult = await system.getUserByEmail(email)
 
-  if (!userResult.ok || !userResult.body) return { error: 'Invalid email or password' }
+  if (!userResult.ok || !userResult.body) {
+    return { error: "We couldn't find an account with that email and password." }
+  }
 
   const user = userResult.body
 
@@ -34,7 +36,7 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
 
   const valid = await verifyPassword(password, user.passwordHash)
 
-  if (!valid) return { error: 'Invalid email or password' }
+  if (!valid) return { error: "We couldn't find an account with that email and password." }
 
   const cookie = await createUserSession({
     request,
@@ -56,7 +58,7 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
 }
 
 export default function LoginPage() {
-  useLoaderData<typeof loader>()
+  const actionData = useActionData<typeof action>()
 
   return (
     <div className="auth-shell">
@@ -73,6 +75,8 @@ export default function LoginPage() {
             Password
             <input name="password" type="password" required className="field" />
           </label>
+
+          {actionData?.error && <p className="text-destructive text-sm">{actionData.error}</p>}
 
           <button type="submit" className="btn btn-primary">
             Sign in

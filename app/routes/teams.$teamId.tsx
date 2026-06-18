@@ -1,6 +1,6 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { Form, Link, redirect, useLoaderData, useSearchParams } from 'react-router'
-import { sendEmail } from 'email'
+import { sendEmail, teamInviteEmail } from 'email'
 import { toast } from 'sonner'
 
 import { getSystemAgent } from '../data/agents.server'
@@ -62,16 +62,21 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
     })
 
     const appUrl = env.APP_URL || new URL(request.url).origin
+    const inviteUrl = `${appUrl}/invite/${token}`
+    const teamName = String(formData.get('teamName') ?? 'team')
+    const emailContent = teamInviteEmail({
+      inviteUrl,
+      teamName,
+      invitedByEmail: user.email,
+    })
 
     await sendEmail(
       {
         to: email,
-
-        subject: `Join ${formData.get('teamName') ?? 'team'} on Roadmaps`,
-
-        html: `<p><a href="${appUrl}/invite/${token}">Accept team invite</a></p>`,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
       },
-
       env,
     )
 
@@ -90,6 +95,7 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
 
 function useTeamActionFeedback() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const [inviteFormKey, setInviteFormKey] = useState(0)
 
   useEffect(() => {
     const invited = searchParams.get('invited')
@@ -102,6 +108,8 @@ function useTeamActionFeedback() {
     if (added) toast.success(`${added} was added to the team`)
     if (removed) toast.success(`${removed} was removed from the team`)
 
+    if (invited || added) setInviteFormKey((key) => key + 1)
+
     setSearchParams(
       (prev) => {
         prev.delete('invited')
@@ -112,12 +120,14 @@ function useTeamActionFeedback() {
       { replace: true },
     )
   }, [searchParams, setSearchParams])
+
+  return inviteFormKey
 }
 
 export default function TeamDetailPage() {
   const team = useLoaderData<typeof loader>()
 
-  useTeamActionFeedback()
+  const inviteFormKey = useTeamActionFeedback()
 
   return (
     <div className="page-narrow">
@@ -153,7 +163,7 @@ export default function TeamDetailPage() {
       </ul>
 
       {team.isAdmin && (
-        <Form method="post" className="flex gap-2">
+        <Form key={inviteFormKey} method="post" className="flex gap-2">
           <input type="hidden" name="intent" value="invite" />
 
           <input type="hidden" name="teamName" value={String(team.name)} />

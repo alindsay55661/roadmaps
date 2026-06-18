@@ -2,15 +2,8 @@ import type { PropertyVoteValue, VotingProperty } from 'roadmaps-agents/schemas'
 
 import { Button } from '~/components/ui/button'
 import { ToggleGroup, ToggleGroupItem } from '~/components/ui/toggle-group'
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from '~/components/ui/tooltip'
-import {
-  PropertyVotingVisualization,
-  transformPropertyVoteToData,
-} from './PropertyVotingVisualization'
+import { Tooltip, TooltipContent, TooltipTrigger } from '~/components/ui/tooltip'
+import { PropertyVotingVisualization, transformPropertyVoteToData } from './PropertyVotingVisualization'
 import type { usePropertyVoteHelpers } from './use-property-vote-helpers'
 
 type PropertyVotingPropertyRowProps = {
@@ -45,10 +38,7 @@ export function PropertyVotingPropertyRow({
   const itemStats = getItemPropertyStats(itemUuid, property.uuid)
   const canChange = canChangeVote(itemUuid, property.uuid)
   const isVotingDisabled = !isConnected || !canChange
-  const restrictionReason = getVoteChangeRestrictionReason(
-    itemUuid,
-    property.uuid,
-  )
+  const restrictionReason = getVoteChangeRestrictionReason(itemUuid, property.uuid)
   const alignment = getAlignmentScore(itemUuid, property.uuid)
 
   return (
@@ -64,17 +54,13 @@ export function PropertyVotingPropertyRow({
               <div>
                 Votes: {itemStats?.totalVotes || 0}
                 {itemStats && itemStats.totalVotes > 0 && (
-                  <span className="ml-2">
-                    Avg: {itemStats.average.toFixed(1)}
-                  </span>
+                  <span className="ml-2">Avg: {itemStats.average.toFixed(1)}</span>
                 )}
               </div>
               {alignment && (
                 <div
                   className={`rounded-md px-2 py-1 text-xs font-medium ${
-                    alignment.score === 'aligned'
-                      ? 'bg-green-100 text-green-700'
-                      : 'bg-amber-100 text-amber-700'
+                    alignment.score === 'aligned' ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-700'
                   }`}
                 >
                   {alignment.score}
@@ -85,7 +71,7 @@ export function PropertyVotingPropertyRow({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-[auto_minmax(0,1fr)]">
         <div className="order-2 flex items-center justify-center gap-2 sm:order-1 sm:justify-start">
           <div className="flex flex-col gap-2">
             <ToggleGroup
@@ -108,9 +94,7 @@ export function PropertyVotingPropertyRow({
                     key={option.value}
                     value={option.value.toString()}
                     className={`flex-none px-2 py-1 text-xs capitalize ${
-                      isVotingDisabled && canChange === false
-                        ? 'cursor-not-allowed opacity-50'
-                        : ''
+                      isVotingDisabled && canChange === false ? 'cursor-not-allowed opacity-50' : ''
                     }`}
                   >
                     {option.label}
@@ -123,10 +107,7 @@ export function PropertyVotingPropertyRow({
                       <TooltipTrigger asChild>
                         <div className="inline-block">{toggleItem}</div>
                       </TooltipTrigger>
-                      <TooltipContent
-                        side="top"
-                        className="z-50 max-w-xs"
-                      >
+                      <TooltipContent side="top" className="z-50 max-w-xs">
                         <p className="text-sm">{restrictionReason}</p>
                       </TooltipContent>
                     </Tooltip>
@@ -153,18 +134,11 @@ export function PropertyVotingPropertyRow({
           </div>
         </div>
 
-        {hasUserVoted(itemUuid, property.uuid) &&
-          itemStats &&
-          itemStats.votes.length > 0 && (
-            <div className="order-1 flex items-center justify-center sm:order-2 sm:justify-end">
-              <PropertyVotingVisualization
-                votes={itemStats.votes.map(transformPropertyVoteToData)}
-                propertyName=""
-                width={260}
-                height={60}
-              />
-            </div>
-          )}
+        {hasUserVoted(itemUuid, property.uuid) && itemStats && itemStats.votes.length > 0 && (
+          <div className="order-1 w-full min-w-0 sm:order-2">
+            <PropertyVotingVisualization votes={itemStats.votes.map(transformPropertyVoteToData)} />
+          </div>
+        )}
       </div>
     </div>
   )
@@ -190,9 +164,7 @@ function PropertyVoteClearButton({
       onClick={onClear}
       disabled={isClearDisabled}
       className={`w-full px-2 py-1 text-xs ${
-        isClearDisabled && canChange === false
-          ? 'cursor-not-allowed opacity-50'
-          : ''
+        isClearDisabled && canChange === false ? 'cursor-not-allowed opacity-50' : ''
       }`}
     >
       Clear
@@ -205,10 +177,7 @@ function PropertyVoteClearButton({
         <TooltipTrigger asChild>
           <div className="inline-block">{clearButton}</div>
         </TooltipTrigger>
-        <TooltipContent
-          side="top"
-          className="z-50 max-w-xs"
-        >
+        <TooltipContent side="top" className="z-50 max-w-xs">
           <p className="text-sm">{restrictionReason}</p>
         </TooltipContent>
       </Tooltip>

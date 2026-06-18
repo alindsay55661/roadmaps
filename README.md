@@ -26,6 +26,7 @@ Open `http://localhost:5173`, sign in with bootstrap credentials, and change you
 ## Documentation
 
 - [Setup](docs/SETUP.md) — deployment, email, Linear, and AI configuration
+- [Security](docs/SECURITY.md) — user and app security model
 - [React Doctor](docs/react-doctor.md) — scan usage and ignored-rule rationale
 
 ## Adding UI components

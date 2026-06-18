@@ -1,9 +1,4 @@
-import {
-  index,
-  layout,
-  route,
-  type RouteConfig,
-} from '@react-router/dev/routes'
+import { index, layout, route, type RouteConfig } from '@react-router/dev/routes'
 
 export default [
   route('login', 'routes/login.tsx'),
@@ -23,6 +18,7 @@ export default [
     route('voting/:uuid/settings', 'routes/voting.$uuid.settings.tsx'),
     route('property-voting/:uuid', 'routes/property-voting.$uuid.tsx'),
     route('property-voting/:uuid/settings', 'routes/property-voting.$uuid.settings.tsx'),
+    route('dev/property-voting-chart', 'routes/dev.property-voting-chart.tsx'),
   ]),
   // Catch-all route for 404s (must be last!)
   route('*', 'routes/$.tsx'),

@@ -1,5 +1,5 @@
 import { redirect } from 'react-router'
-import { escapeHtml, sanitizeEmailSubject, sendEmail } from 'email'
+import { sendEmail, sessionShareEmail, sessionShareInviteEmail } from 'email'
 import type { TimelineSessionAgent } from 'roadmaps-agents'
 import type { SessionPublicState, SessionType } from 'roadmaps-agents/schemas'
 
@@ -96,14 +96,13 @@ async function sendSessionShareNotification({
 
   if (existing.ok && existing.body) {
     const sessionUrl = `${appUrl}${sessionPath(sessionType, uuid)}`
-    const safeActorEmail = escapeHtml(actorEmail)
-    const safeSessionName = escapeHtml(sessionName)
-    const safeSessionUrl = escapeHtml(sessionUrl)
+    const emailContent = sessionShareEmail({ actorEmail, sessionName, sessionUrl })
     const result = await sendEmail(
       {
         to: shareEmail,
-        subject: `${sanitizeEmailSubject(actorEmail)} shared "${sanitizeEmailSubject(sessionName)}" with you`,
-        html: `<p>${safeActorEmail} shared <strong>${safeSessionName}</strong> with you.</p><p><a href="${safeSessionUrl}">Open session</a></p>`,
+        subject: emailContent.subject,
+        html: emailContent.html,
+        text: emailContent.text,
       },
       env,
     )
@@ -125,14 +124,13 @@ async function sendSessionShareNotification({
   })
 
   const inviteUrl = `${appUrl}/invite/${token}`
-  const safeActorEmail = escapeHtml(actorEmail)
-  const safeSessionName = escapeHtml(sessionName)
-  const safeInviteUrl = escapeHtml(inviteUrl)
+  const emailContent = sessionShareInviteEmail({ actorEmail, sessionName, inviteUrl })
   const result = await sendEmail(
     {
       to: shareEmail,
-      subject: `${sanitizeEmailSubject(actorEmail)} shared "${sanitizeEmailSubject(sessionName)}" with you on Roadmaps`,
-      html: `<p>${safeActorEmail} shared <strong>${safeSessionName}</strong> with you.</p><p><a href="${safeInviteUrl}">Accept invite</a></p>`,
+      subject: emailContent.subject,
+      html: emailContent.html,
+      text: emailContent.text,
     },
     env,
   )

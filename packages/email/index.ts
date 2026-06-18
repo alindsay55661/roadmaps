@@ -1,24 +1,20 @@
 import type { DataResult } from 'utils/data'
 import { dataError, dataSuccess } from 'utils/data'
 
+export { escapeHtml, sanitizeEmailSubject } from './sanitize'
+export {
+  passwordResetEmail,
+  platformInviteEmail,
+  sessionShareEmail,
+  sessionShareInviteEmail,
+  teamInviteEmail,
+} from './templates'
+
 export type EmailPayload = {
   to: string
   subject: string
   html: string
   text?: string
-}
-
-export function escapeHtml(value: string) {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-    .replace(/'/g, '&#39;')
-}
-
-export function sanitizeEmailSubject(value: string) {
-  return value.replace(/[\r\n]/g, ' ')
 }
 
 export type EmailEnv = {

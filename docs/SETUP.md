@@ -34,6 +34,8 @@ Provider-specific keys:
 - Postmark: `POSTMARK_SERVER_TOKEN`
 - SendGrid: `SENDGRID_API_KEY`
 
+Transactional email content lives in `packages/email/templates`. In local development, if `EMAIL_PROVIDER` or `EMAIL_FROM` is unset, `sendEmail` logs the full payload (subject, HTML, and plain text) to the worker console instead of sending — useful for previewing invite, password-reset, and session-share emails.
+
 ### Linear import (optional)
 
 | Variable         | Description                                          |

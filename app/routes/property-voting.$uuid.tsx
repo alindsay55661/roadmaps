@@ -99,7 +99,7 @@ function PropertyVotingContent() {
       }}
     >
       {items.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
+        <div className="mx-auto max-w-[720px] rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
           <p>No items available for voting.</p>
           {canEdit && (
             <p className="mt-2 text-sm">
@@ -108,7 +108,7 @@ function PropertyVotingContent() {
           )}
         </div>
       ) : votingProperties.length === 0 ? (
-        <div className="rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
+        <div className="mx-auto max-w-[720px] rounded-lg border border-gray-200 bg-gray-50 p-6 text-center text-gray-500">
           <p>No voting properties yet.</p>
           {canEdit && (
             <p className="mt-1 text-sm">
@@ -119,7 +119,7 @@ function PropertyVotingContent() {
           )}
         </div>
       ) : (
-        <div className="max-w-[720px]">
+        <div className="mx-auto max-w-[720px]">
           <InteractivePropertyVoting
             items={items}
             votingProperties={votingProperties}
