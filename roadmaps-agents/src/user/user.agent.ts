@@ -127,6 +127,18 @@ export class UserAgent extends BaseWebSocketAgent<UserAgentEnv, UserState, UserP
     return dataSuccess()
   }
 
+  async updateSharedSessionOwner({
+    uuid,
+    ownerEmail,
+  }: {
+    uuid: string
+    ownerEmail: string
+  }): Promise<DataResult<void>> {
+    this.ctx.storage.sql.exec(`UPDATE shared_sessions SET owner_email = ? WHERE uuid = ?`, ownerEmail, uuid)
+    await this.broadcast(JSON.stringify({ type: 'sessions:updated' }))
+    return dataSuccess()
+  }
+
   async addSharedSession({
     uuid,
     sessionType,

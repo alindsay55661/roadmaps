@@ -4,6 +4,7 @@ import { hashPassword, validatePassword } from 'utils/password'
 import { PasswordFormFields } from '~/components/auth/password-form-fields'
 import { createUserSession } from '../auth/session.server'
 import { getSystemAgent, getTeamAgent, getUserAgent } from '../data/agents.server'
+import { getMaxAppAdmins } from '../data/user-admin.server'
 import type { Route } from './+types/invite'
 
 export const loader = async ({ params, context }: Route.LoaderArgs) => {
@@ -40,15 +41,31 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
 
   if (!existing.ok) return { error: 'Failed to check user' }
 
+  const inviteRole = invite.body.role === 'app_admin' ? 'app_admin' : 'user'
+
   if (!existing.body) {
+    if (inviteRole === 'app_admin') {
+      const count = await system.countAppAdmins()
+      if (!count.ok) return { error: 'Failed to count app admins' }
+      if (count.body >= getMaxAppAdmins(env)) return { error: `Cannot have more than ${getMaxAppAdmins(env)} app admins` }
+    }
+
     const passwordHash = await hashPassword(password)
 
     const created = await system.createUser({
       email: invite.body.email,
       passwordHash,
+      role: inviteRole,
     })
 
     if (!created.ok) return { error: created.errors.join(', ') }
+  } else if (!invite.body.teamId && inviteRole === 'app_admin' && existing.body.role !== 'app_admin') {
+    const count = await system.countAppAdmins()
+    if (!count.ok) return { error: 'Failed to count app admins' }
+    if (count.body >= getMaxAppAdmins(env)) return { error: `Cannot have more than ${getMaxAppAdmins(env)} app admins` }
+
+    const updated = await system.updateUserRole(invite.body.email, 'app_admin')
+    if (!updated.ok) return { error: updated.errors.join(', ') }
   }
 
   await Promise.all([
@@ -64,10 +81,17 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
     })(),
   ])
 
+  const sessionUser = await system.getUserByEmail(invite.body.email)
+  if (!sessionUser.ok || !sessionUser.body) return { error: 'Failed to load user' }
+
   const cookie = await createUserSession({
     request,
     env,
-    user: { email: invite.body.email, role: 'user', mustChangePassword: false },
+    user: {
+      email: sessionUser.body.email,
+      role: sessionUser.body.role,
+      mustChangePassword: sessionUser.body.mustChangePassword,
+    },
   })
 
   throw redirect('/', { headers: { 'Set-Cookie': cookie } })

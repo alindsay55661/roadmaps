@@ -110,7 +110,7 @@ export function HomeSidebarNav({
       <nav className="grid gap-1 text-sm" aria-label="Account">
         {userRole === 'app_admin' && (
           <Link to="/admin/users" className="nav-item block" onClick={onNavigate}>
-            User administration
+            App administration
           </Link>
         )}
         <Link to="/change-password" className="nav-item block" onClick={onNavigate}>

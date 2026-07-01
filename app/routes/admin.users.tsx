@@ -1,20 +1,54 @@
-import { Form, Link, redirect, useLoaderData } from 'react-router'
+import { Form, redirect, useLoaderData } from 'react-router'
 import { platformInviteEmail, sendEmail } from 'email'
+import type { ComponentProps } from 'react'
 
+import { FloatingTooltip } from '~/components/roadmap/FloatingTooltip'
+import { Button } from '~/components/ui/button'
 import { requireAdmin } from '../auth/session.server'
 import { DeleteUserButton } from '../components/admin/delete-user-button'
 import { getSystemAgent } from '../data/agents.server'
-import { deactivateUser, deleteUserCompletely } from '../data/user-admin.server'
+import {
+  activateUser,
+  deactivateUser,
+  deleteUserCompletely,
+  demoteUserFromAdmin,
+  getMaxAppAdmins,
+  promoteUserToAdmin,
+} from '../data/user-admin.server'
 import type { Route } from './+types/admin.users'
 
+type AdminActionButtonProps = ComponentProps<typeof Button> & {
+  disabledReason?: string
+}
+
+function AdminActionButton({ disabledReason, disabled, ...props }: AdminActionButtonProps) {
+  const button = <Button disabled={disabled} {...props} />
+
+  if (!disabled || !disabledReason) return button
+
+  return (
+    <FloatingTooltip content={disabledReason} placement="top" maxWidth={260}>
+      <span className="inline-flex" tabIndex={0}>
+        {button}
+      </span>
+    </FloatingTooltip>
+  )
+}
+
 export const loader = async ({ request, context }: Route.LoaderArgs) => {
-  await requireAdmin(request, context.cloudflare.env)
+  const admin = await requireAdmin(request, context.cloudflare.env)
 
   const system = await getSystemAgent(context.cloudflare.env)
 
   const users = await system.listUsers()
+  const adminCount = await system.countAppAdmins()
 
-  return { users: users.ok ? users.body : [] }
+  return {
+    currentUserEmail: admin.email,
+    users: users.ok ? users.body : [],
+    activeAdminCount: adminCount.ok ? adminCount.body : 0,
+    maxAppAdmins: getMaxAppAdmins(context.cloudflare.env),
+  }
 }
 
 export const action = async ({ request, context }: Route.ActionArgs) => {
@@ -30,6 +64,15 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
 
   if (intent === 'invite') {
     const email = String(formData.get('email'))
+    const role = formData.get('role') === 'app_admin' ? 'app_admin' : 'user'
+
+    if (role === 'app_admin') {
+      const count = await system.countAppAdmins()
+      if (!count.ok) throw new Response('Failed to count app admins', { status: 500 })
+      if (count.body >= getMaxAppAdmins(env)) {
+        throw new Response(`Cannot have more than ${getMaxAppAdmins(env)} app admins`, { status: 400 })
+      }
+    }
 
     const token = crypto.randomUUID()
 
@@ -39,6 +82,7 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
       token,
       email,
       invitedBy: admin.email,
+      role,
       expiresAt,
     })
 
@@ -61,8 +105,16 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
     await deactivateUser({ env, email: String(formData.get('email')) })
   }
 
+  if (intent === 'promote-admin') {
+    await promoteUserToAdmin({ env, email: String(formData.get('email')) })
+  }
+
+  if (intent === 'demote-admin') {
+    await demoteUserFromAdmin({ env, email: String(formData.get('email')) })
+  }
+
   if (intent === 'activate') {
-    await system.setUserStatus(String(formData.get('email')), 'active')
+    await activateUser({ env, email: String(formData.get('email')) })
   }
 
   if (intent === 'delete') {
@@ -75,52 +127,126 @@ export const action = async ({ request, context }: Route.ActionArgs) => {
 }
 
 export default function AdminUsersPage() {
-  const { users } = useLoaderData<typeof loader>()
+  const { users, currentUserEmail, activeAdminCount, maxAppAdmins } = useLoaderData<typeof loader>()
 
   return (
-    <div className="page max-w-3xl">
-      <Link to="/" className="link-back">
-        ← Home
-      </Link>
+    <div className="max-w-3xl">
+      <h2 className="mb-2 text-xl font-semibold">Users</h2>
+      <p className="text-muted-foreground mb-6 text-sm">
+        Manage users and assign up to {maxAppAdmins} named app admin seats.
+      </p>
 
-      <h1 className="mt-4 mb-6 text-2xl font-semibold">User Administration</h1>
-
-      <Form method="post" className="mb-8 flex gap-2">
+      <Form method="post" className="mb-8 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center">
         <input type="hidden" name="intent" value="invite" />
 
         <input name="email" type="email" required placeholder="Invite email" className="field flex-1" />
 
-        <button type="submit" className="btn btn-primary">
+        <label className="text-muted-foreground flex shrink-0 items-center gap-2 text-sm">
+          <input type="checkbox" name="role" value="app_admin" />
+          Invite as app admin
+        </label>
+
+        <button type="submit" className="btn btn-primary shrink-0">
           Invite
         </button>
       </Form>
 
       <ul className="grid gap-2">
-        {users.map((user) => (
-          <li key={user.email} className="list-row flex items-center justify-between">
+        {users.map((user) => {
+          const isActiveAppAdmin = user.role === 'app_admin' && user.status === 'active'
+          const isLastActiveAppAdmin = isActiveAppAdmin && activeAdminCount <= 1
+          const removeAdminDisabledReason = isLastActiveAppAdmin
+            ? "You can't remove admin rights from the last active app admin. Promote another user to app admin first."
+            : undefined
+          const makeAdminDisabledReason =
+            activeAdminCount >= maxAppAdmins
+              ? `You've reached the maximum of ${maxAppAdmins} active app admins. Remove an admin before promoting another user.`
+              : undefined
+          const deactivateDisabledReason = isLastActiveAppAdmin
+            ? "You can't deactivate the last active app admin. Promote another user to app admin first."
+            : undefined
+          const activateAdminDisabledReason =
+            user.status !== 'active' && user.role === 'app_admin' && activeAdminCount >= maxAppAdmins
+              ? `You've reached the maximum of ${maxAppAdmins} active app admins. Deactivate another app admin before activating this user.`
+              : undefined
+          const statusChangeDisabledReason =
+            user.status === 'active' ? deactivateDisabledReason : activateAdminDisabledReason
+
+          return (
+          <li key={user.email} className="list-row flex items-center justify-between gap-4">
             <div>
-              <div className="font-medium">{user.email}</div>
+              <div className="flex items-center gap-2 font-medium">
+                <span>{user.email}</span>
+                {user.email === currentUserEmail && (
+                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-normal">You</span>
+                )}
+                {user.role === 'app_admin' && (
+                  <span className="rounded-full bg-blue-50 px-2 py-0.5 text-xs font-medium text-blue-700">
+                    app admin
+                  </span>
+                )}
+              </div>
 
               <div className="text-muted-foreground text-xs">
                 {user.role} · {user.status}
               </div>
             </div>
 
-            <div className="flex gap-2">
+            <div className="flex flex-wrap justify-end gap-2">
+              {user.role === 'app_admin' ? (
+                <Form method="post">
+                  <input type="hidden" name="email" value={user.email} />
+                  <input type="hidden" name="intent" value="demote-admin" />
+                  <AdminActionButton
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    disabled={isLastActiveAppAdmin}
+                    disabledReason={removeAdminDisabledReason}
+                  >
+                    Remove admin
+                  </AdminActionButton>
+                </Form>
+              ) : (
+                <Form method="post">
+                  <input type="hidden" name="email" value={user.email} />
+                  <input type="hidden" name="intent" value="promote-admin" />
+                  <AdminActionButton
+                    type="submit"
+                    variant="outline"
+                    size="sm"
+                    disabled={activeAdminCount >= maxAppAdmins}
+                    disabledReason={makeAdminDisabledReason}
+                  >
+                    Make admin
+                  </AdminActionButton>
+                </Form>
+              )}
+
               <Form method="post">
                 <input type="hidden" name="email" value={user.email} />
 
                 <input type="hidden" name="intent" value={user.status === 'active' ? 'deactivate' : 'activate'} />
 
-                <button type="submit" className="link-muted">
+                <AdminActionButton
+                  type="submit"
+                  variant="outline"
+                  size="sm"
+                  disabled={isLastActiveAppAdmin || !!activateAdminDisabledReason}
+                  disabledReason={statusChangeDisabledReason}
+                >
                   {user.status === 'active' ? 'Deactivate' : 'Activate'}
-                </button>
+                </AdminActionButton>
               </Form>
 
-              <DeleteUserButton email={user.email} />
+              <DeleteUserButton
+                email={user.email}
+                disabled={isLastActiveAppAdmin}
+                disabledReason="You can't delete the last active app admin. Promote another user to app admin first."
+              />
             </div>
           </li>
-        ))}
+        )})}
       </ul>
     </div>
   )

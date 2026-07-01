@@ -1,6 +1,7 @@
 import { dataError, type DataResult, dataSuccess } from 'utils/data'
 import type { BaseWebSocketAgent } from 'websockets/server'
 
+import type { SystemAgent } from '../system/system.agent'
 import type { TeamAgent } from '../team/team.agent'
 import { type AccessContext, canAccessSession, canEditSession, canManageSharing, canVote } from './access'
 import type { SessionAgentMethods } from './session-agent-methods'
@@ -9,6 +10,7 @@ import { DEFAULT_DOT_VOTING_DOTS_PER_VOTER } from './session-schemas'
 import type { SessionType, SharePermission } from './types'
 
 export type SessionAgentEnv = {
+  SYSTEM_AGENT: DurableObjectNamespace
   USER_AGENT: DurableObjectNamespace
   TEAM_AGENT: DurableObjectNamespace
 }
@@ -30,8 +32,10 @@ export async function buildAccessContext(agent: SessionAgent, userId: string): P
     return {
       userId,
       isOwner: false,
+      isAppAdmin: false,
       isTeamAdmin: false,
       isTeamMember: false,
+      ownerStatus: 'deleted',
       sharePermission: undefined,
     }
   }
@@ -41,6 +45,25 @@ export async function buildAccessContext(agent: SessionAgent, userId: string): P
 
   let isTeamMember = false
   let isTeamAdmin = false
+  let isAppAdmin = false
+  let ownerStatus: AccessContext['ownerStatus'] = 'active'
+
+  const systemAgent = agent.env.SYSTEM_AGENT.get(
+    agent.env.SYSTEM_AGENT.idFromName('system'),
+  ) as unknown as SystemAgent
+
+  const [actingUserResult, ownerResult] = await Promise.all([
+    systemAgent.getUserByEmail(userId),
+    systemAgent.getUserByEmail(state.ownerEmail),
+  ])
+
+  if (actingUserResult.ok && actingUserResult.body) {
+    isAppAdmin = actingUserResult.body.role === 'app_admin' && actingUserResult.body.status === 'active'
+  }
+
+  if (ownerResult.ok) {
+    ownerStatus = ownerResult.body?.status ?? 'deleted'
+  }
 
   if (state.teamId) {
     const teamAgent = agent.env.TEAM_AGENT.get(
@@ -54,8 +77,10 @@ export async function buildAccessContext(agent: SessionAgent, userId: string): P
   return {
     userId,
     isOwner: state.ownerEmail === userId,
+    isAppAdmin,
     isTeamAdmin,
     isTeamMember,
+    ownerStatus,
     sharePermission: share?.permission,
   }
 }

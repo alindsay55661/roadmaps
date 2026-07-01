@@ -8,6 +8,18 @@ import { BaseWebSocketAgent } from 'websockets/server'
 import { SYSTEM_SCHEMA_VERSION, systemMigrations } from './migrations'
 import { type UserRecord, userRecordSchema } from './schemas'
 
+type UserRole = 'app_admin' | 'user'
+type TeamRecord = {
+  teamId: string
+  name: string
+  createdBy: string
+  createdAt: number
+}
+type RemovedUserRecord = {
+  email: string
+  removedAt: number
+}
+
 export type SystemAgentEnv = {
   BOOTSTRAP_ADMIN_EMAIL?: string
   BOOTSTRAP_ADMIN_PASSWORD?: string
@@ -103,6 +115,29 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
     return dataSuccess(users)
   }
 
+  async countAppAdmins(): Promise<DataResult<number>> {
+    const row = this.ctx.storage.sql
+      .exec(`SELECT COUNT(*) as c FROM users WHERE role = 'app_admin' AND status = 'active'`)
+      .one() as { c: number }
+    return dataSuccess(row.c)
+  }
+
+  async listAppAdmins(): Promise<DataResult<UserRecord[]>> {
+    const users = await this.listUsers()
+    if (!users.ok) return users
+    return dataSuccess(users.body.filter((user) => user.role === 'app_admin' && user.status === 'active'))
+  }
+
+  async updateUserRole(email: string, role: UserRole): Promise<DataResult<void>> {
+    const existing = await this.getUserByEmail(email)
+    if (!existing.ok) return dataError(existing.errors[0] ?? 'Failed to read user')
+    if (!existing.body) return dataError('User not found')
+
+    const now = Math.floor(Date.now() / 1000)
+    this.ctx.storage.sql.exec(`UPDATE users SET role = ?, updated_at = ? WHERE email = ?`, role, now, email)
+    return dataSuccess()
+  }
+
   async createUser({
     email,
     passwordHash,
@@ -111,7 +146,7 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
   }: {
     email: string
     passwordHash: string
-    role?: 'app_admin' | 'user'
+    role?: UserRole
     mustChangePassword?: boolean
   }): Promise<DataResult<UserRecord>> {
     const now = Math.floor(Date.now() / 1000)
@@ -167,28 +202,54 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
     return dataSuccess()
   }
 
+  async recordRemovedUser(email: string): Promise<DataResult<void>> {
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO removed_users (email, removed_at) VALUES (?, ?)`,
+      email,
+      Math.floor(Date.now() / 1000),
+    )
+    return dataSuccess()
+  }
+
+  async listRemovedUsers(): Promise<DataResult<RemovedUserRecord[]>> {
+    const rows = this.ctx.storage.sql.exec(`SELECT * FROM removed_users ORDER BY removed_at DESC`).toArray()
+    return dataSuccess(
+      rows.map((row) => ({
+        email: row.email as string,
+        removedAt: row.removed_at as number,
+      })),
+    )
+  }
+
   async createInvite({
     token,
     email,
     invitedBy,
     teamId,
+    role = 'user',
     expiresAt,
   }: {
     token: string
     email: string
     invitedBy: string
     teamId?: string | null
+    role?: UserRole
     expiresAt: number
   }): Promise<DataResult<void>> {
     this.ctx.storage.sql.exec(
-      `INSERT INTO user_invites (token, email, invited_by, team_id, expires_at) VALUES (?, ?, ?, ?, ?)`,
+      `INSERT INTO user_invites (token, email, invited_by, team_id, role, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
       token,
       email,
       invitedBy,
       teamId ?? null,
+      role,
       expiresAt,
     )
     return dataSuccess()
+  }
+
+  private parseInviteRole(role: unknown): UserRole {
+    return role === 'app_admin' ? 'app_admin' : 'user'
   }
 
   async getInvite(token: string) {
@@ -201,6 +262,7 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
       email: row.email as string,
       invitedBy: row.invited_by as string,
       teamId: row.team_id as string | null,
+      role: this.parseInviteRole(row.role),
     })
   }
 
@@ -216,6 +278,51 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
       email: row.email as string,
       invitedBy: row.invited_by as string,
       teamId: row.team_id as string | null,
+      role: this.parseInviteRole(row.role),
+    })
+  }
+
+  async registerTeam({
+    teamId,
+    name,
+    createdBy,
+    createdAt,
+  }: {
+    teamId: string
+    name: string
+    createdBy: string
+    createdAt?: number
+  }): Promise<DataResult<void>> {
+    this.ctx.storage.sql.exec(
+      `INSERT OR REPLACE INTO teams (team_id, name, created_by, created_at) VALUES (?, ?, ?, ?)`,
+      teamId,
+      name,
+      createdBy,
+      createdAt ?? Math.floor(Date.now() / 1000),
+    )
+    return dataSuccess()
+  }
+
+  async listTeams(): Promise<DataResult<TeamRecord[]>> {
+    const rows = this.ctx.storage.sql.exec(`SELECT * FROM teams ORDER BY created_at ASC`).toArray()
+    return dataSuccess(
+      rows.map((row) => ({
+        teamId: row.team_id as string,
+        name: row.name as string,
+        createdBy: row.created_by as string,
+        createdAt: row.created_at as number,
+      })),
+    )
+  }
+
+  async getTeamRecord(teamId: string): Promise<DataResult<TeamRecord | null>> {
+    const row = this.ctx.storage.sql.exec(`SELECT * FROM teams WHERE team_id = ?`, teamId).one()
+    if (!row) return dataSuccess(null)
+    return dataSuccess({
+      teamId: row.team_id as string,
+      name: row.name as string,
+      createdBy: row.created_by as string,
+      createdAt: row.created_at as number,
     })
   }
 

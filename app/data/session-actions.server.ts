@@ -28,7 +28,8 @@ function getIntentAccessTier(intent: string): SessionAccessTier {
     intent === 'rename-session' ||
     intent === 'delete-session' ||
     intent === 'move-to-team' ||
-    intent === 'move-to-drafts'
+    intent === 'move-to-drafts' ||
+    intent === 'transfer-ownership'
   ) {
     return 'owner'
   }
@@ -323,11 +324,9 @@ export async function handleSessionAction({
       name: string
     }
 
-    if (session.ownerEmail !== user.email) throw new Response('Forbidden', { status: 403 })
-
     const team = await getTeamAgent(env, teamId)
     const isMember = await team.isMember(user.email)
-    if (!isMember) throw new Response('Forbidden', { status: 403 })
+    if (!isMember && user.role !== 'app_admin') throw new Response('Forbidden', { status: 403 })
 
     if (session.teamId && session.teamId !== teamId) {
       const previousTeam = await getTeamAgent(env, session.teamId)
@@ -353,8 +352,6 @@ export async function handleSessionAction({
       teamId: string | null
       name: string
     }
-
-    if (session.ownerEmail !== user.email) throw new Response('Forbidden', { status: 403 })
 
     if (session.teamId) {
       const team = await getTeamAgent(env, session.teamId)
@@ -383,6 +380,23 @@ export async function handleSessionAction({
     })
     if (!result.ok) {
       throw new Response(result.errors[0] ?? 'Failed to rename session', {
+        status: 400,
+      })
+    }
+
+    return null
+  }
+
+  if (intent === 'transfer-ownership') {
+    const newOwnerEmail = String(formData.get('newOwnerEmail') ?? '').trim()
+    if (!newOwnerEmail) throw new Response('New owner email is required', { status: 400 })
+
+    const result = await agent.transferSessionOwnership({
+      actorEmail: user.email,
+      newOwnerEmail,
+    })
+    if (!result.ok) {
+      throw new Response(result.errors[0] ?? 'Failed to transfer ownership', {
         status: 400,
       })
     }

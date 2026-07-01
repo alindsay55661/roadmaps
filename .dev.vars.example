@@ -2,6 +2,7 @@ SESSION_SECRET=dev-secret-change-me
 APP_URL=http://localhost:5173
 BOOTSTRAP_ADMIN_EMAIL=admin@example.com
 BOOTSTRAP_ADMIN_PASSWORD=change-me-on-first-login
+MAX_APP_ADMINS=5
 
 # Email (required for production invites + password reset)
 # EMAIL_PROVIDER=resend

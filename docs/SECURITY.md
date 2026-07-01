@@ -42,8 +42,9 @@ Team admins receive editor-level session access when the session belongs to thei
 
 ### Teams
 
-- **View team:** Team member required (`requireTeamMember`).
-- **Invite / remove member:** Team admin required (`requireTeamAdmin`).
+- **View team:** Team member required (`requireTeamMember`) or app admin (`requireTeamMemberOrAppAdmin`).
+- **Invite / remove member:** Team admin required (`requireTeamAdmin`) or app admin (`requireTeamAdminOrAppAdmin`).
+- **App admin team recovery:** App admins can view all registered teams, claim admin rights on orphaned teams, and promote/demote team admins. Removing or demoting the last team admin is blocked.
 - **Create session in team context:** Team membership verified before session is created and indexed.
 
 ### App user roles
@@ -52,14 +53,23 @@ Roadmaps has two **app-level** roles only. These are stored on the user record i
 
 | Role            | Who gets it                                                                                                | Access                                              |
 | --------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
-| **`user`**      | Default for every account created via invite or team invite                                                | Normal app use: drafts, teams, sessions, sharing    |
-| **`app_admin`** | Bootstrap admin on first deploy (`BOOTSTRAP_ADMIN_EMAIL` / `BOOTSTRAP_ADMIN_PASSWORD`) when no users exist | User Administration and other platform admin routes |
+| **`user`**      | Default for standard platform invites and all team invites                                                 | Normal app use: drafts, teams, sessions, sharing |
+| **`app_admin`** | Bootstrap admin on first deploy, promoted users, or users invited as admins from App Administration        | App Administration, global team recovery, and unassigned content management |
 
-**Invites from User Administration** create an email-only invite. When the invite is accepted, the new account is always created with role `user`. There is no UI to assign or promote `app_admin` after bootstrap.
+App admins are named user accounts, not shared credentials. App Administration supports inviting a user as `app_admin`, promoting/demoting existing users, and deactivating/deleting users. The last active app admin cannot be demoted, deactivated, or deleted. `MAX_APP_ADMINS` can cap the number of active app admins (default: 5).
 
 **Team roles** (`admin`, `member`) are a different layer: they govern membership and management within a single team (invite/remove members, team-scoped sessions). They do not change the user’s app-level role.
 
-- `app_admin` gates platform routes via `requireAdmin` (e.g. `/admin/users`). Separate from session and team permissions.
+- `app_admin` gates platform routes via `requireAdmin` (e.g. `/admin/users`, `/admin/teams`, `/admin/unassigned`). Separate from normal session and team permissions.
+
+### Unassigned content
+
+Roadmaps follows a Figma-style removed-user content model for personal drafts:
+
+- Deactivated users lose access immediately, but their personal drafts remain in their UserAgent dashboard.
+- Deleted users are recorded in a `removed_users` tombstone before their account row is removed, so app admins can still find their personal drafts.
+- App admins can view `/admin/unassigned` to delete, move to a team, or transfer ownership of drafts owned by deactivated or deleted users.
+- App admins do **not** receive blanket access to active users' private drafts. The app-admin bypass only applies when the session owner is deactivated or deleted.
 
 ## Data boundaries
 

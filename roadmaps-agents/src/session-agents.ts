@@ -27,6 +27,7 @@ import * as dotVotingSettingsHandlers from './shared/handlers/dot-voting-setting
 import * as itemsHandlers from './shared/handlers/items'
 import * as propertyVotesHandlers from './shared/handlers/property-votes'
 import * as sessionLifecycleHandlers from './shared/handlers/session-lifecycle'
+import * as sessionOwnershipHandlers from './shared/handlers/session-ownership'
 import * as sessionRenameHandlers from './shared/handlers/session-rename'
 import * as sharingHandlers from './shared/handlers/sharing'
 import * as timelineHandlers from './shared/handlers/timeline'
@@ -34,6 +35,7 @@ import * as timelineSettingsHandlers from './shared/handlers/timeline-settings'
 import * as votingPropertiesHandlers from './shared/handlers/voting-properties'
 import {
   buildAccessContext,
+  canAccessSession,
   getSessionLastEditedAt,
   initializeSession,
   type SessionAgentEnv,
@@ -152,7 +154,7 @@ abstract class BaseSessionAgent extends BaseWebSocketAgent<
 
   async userHasAccess(email: string) {
     const access = await buildAccessContext(this as never, email)
-    return access.isOwner || access.isTeamMember || access.isTeamAdmin || !!access.sharePermission
+    return canAccessSession(access)
   }
 
   async initSession(args: Parameters<typeof initializeSession>[1]) {
@@ -182,6 +184,19 @@ abstract class BaseSessionAgent extends BaseWebSocketAgent<
     return sessionRenameHandlers.renameSession.call(this as never, {
       name,
       actorEmail,
+    })
+  }
+
+  async transferSessionOwnership({
+    actorEmail,
+    newOwnerEmail,
+  }: {
+    actorEmail: string
+    newOwnerEmail: string
+  }) {
+    return sessionOwnershipHandlers.transferOwnership.call(this as never, {
+      actorEmail,
+      newOwnerEmail,
     })
   }
 
@@ -352,6 +367,10 @@ declare module './session-agents' {
     removeShare: typeof sharingHandlers.removeShare
     getSharingInfo: typeof sharingHandlers.getSharingInfo
     checkAccess: typeof sharingHandlers.checkAccess
+    transferSessionOwnership(args: {
+      actorEmail: string
+      newOwnerEmail: string
+    }): ReturnType<typeof sessionOwnershipHandlers.transferOwnership>
   }
 
   interface DotVotingSessionAgent {
@@ -373,6 +392,10 @@ declare module './session-agents' {
     removeShare: typeof sharingHandlers.removeShare
     getSharingInfo: typeof sharingHandlers.getSharingInfo
     checkAccess: typeof sharingHandlers.checkAccess
+    transferSessionOwnership(args: {
+      actorEmail: string
+      newOwnerEmail: string
+    }): ReturnType<typeof sessionOwnershipHandlers.transferOwnership>
   }
 
   interface PropertyVotingSessionAgent {
@@ -397,6 +420,10 @@ declare module './session-agents' {
     removeShare: typeof sharingHandlers.removeShare
     getSharingInfo: typeof sharingHandlers.getSharingInfo
     checkAccess: typeof sharingHandlers.checkAccess
+    transferSessionOwnership(args: {
+      actorEmail: string
+      newOwnerEmail: string
+    }): ReturnType<typeof sessionOwnershipHandlers.transferOwnership>
   }
 }
 

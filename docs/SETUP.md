@@ -18,6 +18,9 @@ Copy `.dev.vars.example` to `.dev.vars` for local development. For production, s
 | `APP_URL`                  | Public URL (e.g. `https://roadmaps.example.com`)           |
 | `BOOTSTRAP_ADMIN_EMAIL`    | First admin email (one-time seed)                          |
 | `BOOTSTRAP_ADMIN_PASSWORD` | First admin password (one-time; user must change on login) |
+| `MAX_APP_ADMINS`           | Optional cap for active app admin seats (default: `5`)     |
+
+After the bootstrap admin signs in, use **App Administration** to invite or promote 2–3 named `app_admin` users. Do not share the bootstrap account password as an ongoing superuser credential; once named admins are in place, the bootstrap admin can be demoted or deactivated as long as at least one other active app admin remains.
 
 ### Email (required for production)
 

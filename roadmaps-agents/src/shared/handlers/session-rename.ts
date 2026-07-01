@@ -3,7 +3,7 @@ import { dataError, dataSuccess } from 'utils/data'
 import type { TeamAgent } from '../../team/team.agent'
 import type { UserAgent } from '../../user/user.agent'
 import { GENERAL_EVENTS, getGeneralChannelName } from '../channels'
-import { buildAccessContext, type SessionAgent } from '../session-handlers'
+import { buildAccessContext, canManageSharing, type SessionAgent } from '../session-handlers'
 
 export async function renameSession(
   this: SessionAgent,
@@ -13,7 +13,7 @@ export async function renameSession(
   if (!trimmedName) return dataError('Name is required')
 
   const access = await buildAccessContext(this, actorEmail)
-  if (!access.isOwner)
+  if (!canManageSharing(access))
     return dataError('Only the owner can rename this session')
 
   const state = this.state

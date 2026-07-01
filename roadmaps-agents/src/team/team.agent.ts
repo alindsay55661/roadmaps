@@ -1,13 +1,15 @@
 import { sharedMigrations } from 'utils'
 import { Lock, migrateAgent } from 'utils/agents'
-import { dataError, type DataResult,dataSuccess } from 'utils/data'
+import { dataError, type DataResult, dataSuccess } from 'utils/data'
 import { BaseWebSocketAgent } from 'websockets/server'
 
 import type { SessionType, TeamMemberRole } from '../shared/types'
+import type { SystemAgent } from '../system/system.agent'
 import type { UserAgent } from '../user/user.agent'
 import { TEAM_SCHEMA_VERSION, teamMigrations } from './migrations'
 
 export type TeamAgentEnv = {
+  SYSTEM_AGENT: DurableObjectNamespace
   USER_AGENT: DurableObjectNamespace
 }
 
@@ -67,6 +69,11 @@ export class TeamAgent extends BaseWebSocketAgent<TeamAgentEnv, TeamState> {
     )
     await this.setState({ teamId, name, createdBy })
 
+    const systemAgent = this.env.SYSTEM_AGENT.get(
+      this.env.SYSTEM_AGENT.idFromName('system'),
+    ) as unknown as SystemAgent
+    await systemAgent.registerTeam({ teamId, name, createdBy, createdAt: now })
+
     const userAgent = this.env.USER_AGENT.get(
       this.env.USER_AGENT.idFromName(createdBy),
     ) as unknown as UserAgent
@@ -99,6 +106,12 @@ export class TeamAgent extends BaseWebSocketAgent<TeamAgentEnv, TeamState> {
   }
 
   async removeMember(email: string): Promise<DataResult<void>> {
+    const role = await this.getMemberRole(email)
+    if (role === 'admin') {
+      const adminCount = await this.getAdminCount()
+      if (adminCount <= 1) return dataError('Cannot remove the last team admin')
+    }
+
     this.ctx.storage.sql.exec(`DELETE FROM team_members WHERE email = ?`, email)
     const userAgent = this.env.USER_AGENT.get(
       this.env.USER_AGENT.idFromName(email),
@@ -113,6 +126,31 @@ export class TeamAgent extends BaseWebSocketAgent<TeamAgentEnv, TeamState> {
       .exec(`SELECT role FROM team_members WHERE email = ?`, email)
       .one()
     return (row?.role as TeamMemberRole) ?? null
+  }
+
+  async getAdminCount(): Promise<number> {
+    const row = this.ctx.storage.sql
+      .exec(`SELECT COUNT(*) as c FROM team_members WHERE role = 'admin'`)
+      .one() as { c: number }
+    return row.c
+  }
+
+  async hasAdmin(): Promise<boolean> {
+    return (await this.getAdminCount()) > 0
+  }
+
+  async setMemberRole(email: string, role: TeamMemberRole): Promise<DataResult<void>> {
+    const existing = await this.getMemberRole(email)
+    if (!existing) return dataError('Team member not found')
+    if (existing === role) return dataSuccess()
+    if (existing === 'admin' && role !== 'admin') {
+      const adminCount = await this.getAdminCount()
+      if (adminCount <= 1) return dataError('Cannot remove the last team admin')
+    }
+
+    this.ctx.storage.sql.exec(`UPDATE team_members SET role = ? WHERE email = ?`, role, email)
+    await this.broadcast(JSON.stringify({ type: 'team:updated' }))
+    return dataSuccess()
   }
 
   async isMember(email: string) {
@@ -163,6 +201,22 @@ export class TeamAgent extends BaseWebSocketAgent<TeamAgentEnv, TeamState> {
     this.ctx.storage.sql.exec(
       `UPDATE team_sessions SET name = ? WHERE uuid = ?`,
       name,
+      uuid,
+    )
+    await this.broadcast(JSON.stringify({ type: 'team:updated' }))
+    return dataSuccess()
+  }
+
+  async updateTeamSessionOwner({
+    uuid,
+    ownerEmail,
+  }: {
+    uuid: string
+    ownerEmail: string
+  }): Promise<DataResult<void>> {
+    this.ctx.storage.sql.exec(
+      `UPDATE team_sessions SET owner_email = ? WHERE uuid = ?`,
+      ownerEmail,
       uuid,
     )
     await this.broadcast(JSON.stringify({ type: 'team:updated' }))

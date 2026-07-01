@@ -13,6 +13,7 @@ export type RequiredEnvVars = typeof requiredEnvVars & {
   DOT_VOTING_SESSION_AGENT: DurableObjectNamespace
   PROPERTY_VOTING_SESSION_AGENT: DurableObjectNamespace
   ENVIRONMENT: string
+  MAX_APP_ADMINS?: string
   EMAIL_PROVIDER?: string
   EMAIL_FROM?: string
   EMAIL_FROM_NAME?: string

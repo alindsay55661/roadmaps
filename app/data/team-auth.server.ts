@@ -1,4 +1,5 @@
 import type { RequiredEnvVars } from '../../env-required'
+import type { SessionUser } from '../auth/session.server'
 import { getTeamAgent } from './agents.server'
 
 export async function requireTeamMember({
@@ -29,4 +30,30 @@ export async function requireTeamAdmin({
   const role = await team.getMemberRole(userId)
   if (role !== 'admin') throw new Response('Forbidden', { status: 403 })
   return team
+}
+
+export async function requireTeamMemberOrAppAdmin({
+  env,
+  teamId,
+  user,
+}: {
+  env: RequiredEnvVars
+  teamId: string
+  user: SessionUser
+}) {
+  if (user.role === 'app_admin') return getTeamAgent(env, teamId)
+  return requireTeamMember({ env, teamId, userId: user.email })
+}
+
+export async function requireTeamAdminOrAppAdmin({
+  env,
+  teamId,
+  user,
+}: {
+  env: RequiredEnvVars
+  teamId: string
+  user: SessionUser
+}) {
+  if (user.role === 'app_admin') return getTeamAgent(env, teamId)
+  return requireTeamAdmin({ env, teamId, userId: user.email })
 }

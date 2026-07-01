@@ -10,12 +10,13 @@ import type {
 } from 'roadmaps-agents/schemas'
 
 import type { RequiredEnvVars } from '../../env-required'
-import { type AccessContext, canEditSession, canVote } from '../../roadmaps-agents/src/shared/access'
+import { type AccessContext, canEditSession, canManageSharing, canVote } from '../../roadmaps-agents/src/shared/access'
 import type { SessionUser } from '../auth/session.server'
 import {
   getDotVotingSessionAgent,
   getPropertyVotingSessionAgent,
   getSessionAgent,
+  getSystemAgent,
   getTeamAgent,
   getTimelineSessionAgent,
   getUserAgent,
@@ -51,14 +52,17 @@ async function buildAccessContextFromAgent({
   env,
   session,
   email,
+  userRole,
 }: {
   env: RequiredEnvVars
   session: SessionPublicState
   email: string
+  userRole: SessionUser['role']
 }): Promise<AccessContext> {
   let isTeamMember = false
   let isTeamAdmin = false
   let sharePermission: SharePermission | undefined
+  let ownerStatus: AccessContext['ownerStatus'] = 'deleted'
 
   if (session.teamId) {
     const team = await getTeamAgent(env, session.teamId)
@@ -76,11 +80,17 @@ async function buildAccessContextFromAgent({
     }
   }
 
+  const system = await getSystemAgent(env)
+  const owner = await system.getUserByEmail(session.ownerEmail)
+  if (owner.ok && owner.body) ownerStatus = owner.body.status
+
   return {
     userId: email,
     isOwner: session.ownerEmail === email,
+    isAppAdmin: userRole === 'app_admin',
     isTeamAdmin,
     isTeamMember,
+    ownerStatus,
     sharePermission,
   }
 }
@@ -115,6 +125,7 @@ export async function loadSessionContext({
     env,
     session,
     email: user.email,
+    userRole: user.role,
   })
 
   const userAgent = await getUserAgent(env, user.email)
@@ -199,7 +210,7 @@ export async function loadSessionContext({
     votingProperties,
     canEdit: canEditSession(access),
     canVote: canVote(access),
-    isOwner: access.isOwner,
+    isOwner: canManageSharing(access),
     user,
   }
 }

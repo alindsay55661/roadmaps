@@ -9,7 +9,11 @@ export default [
   route('change-password', 'routes/change-password.tsx'),
   layout('routes/_app.tsx', [
     index('routes/home.tsx'),
-    route('admin/users', 'routes/admin.users.tsx'),
+    route('admin', 'routes/admin.tsx', [
+      route('users', 'routes/admin.users.tsx'),
+      route('teams', 'routes/admin.teams.tsx'),
+      route('unassigned', 'routes/admin.unassigned.tsx'),
+    ]),
     route('teams', 'routes/teams.tsx'),
     route('teams/:teamId', 'routes/teams.$teamId.tsx'),
     route('roadmap/:uuid', 'routes/roadmap.$uuid.tsx'),

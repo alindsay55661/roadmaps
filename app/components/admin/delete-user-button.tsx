@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Form } from 'react-router'
 
+import { FloatingTooltip } from '~/components/roadmap/FloatingTooltip'
 import { Button } from '~/components/ui/button'
 import {
   Dialog,
@@ -13,16 +14,36 @@ import {
 
 type DeleteUserButtonProps = {
   email: string
+  disabled?: boolean
+  disabledReason?: string
 }
 
-export function DeleteUserButton({ email }: DeleteUserButtonProps) {
+export function DeleteUserButton({ email, disabled = false, disabledReason }: DeleteUserButtonProps) {
   const [open, setOpen] = useState(false)
+
+  const button = (
+    <Button
+      type="button"
+      variant="destructive"
+      size="sm"
+      disabled={disabled}
+      onClick={() => setOpen(true)}
+    >
+      Delete
+    </Button>
+  )
 
   return (
     <>
-      <button type="button" className="text-sm text-red-600 hover:text-red-700" onClick={() => setOpen(true)}>
-        Delete
-      </button>
+      {disabled && disabledReason ? (
+        <FloatingTooltip content={disabledReason} placement="top" maxWidth={220}>
+          <span className="inline-flex" tabIndex={0}>
+            {button}
+          </span>
+        </FloatingTooltip>
+      ) : (
+        button
+      )}
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>
