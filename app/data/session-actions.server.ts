@@ -121,6 +121,7 @@ async function sendSessionShareNotification({
     email: shareEmail,
     invitedBy: actorEmail,
     teamId: null,
+    source: 'session',
     expiresAt,
   })
 

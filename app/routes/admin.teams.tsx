@@ -67,7 +67,9 @@ export default function AdminTeamsPage() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h2 className="text-xl font-semibold">Teams</h2>
-          <p className="text-muted-foreground mt-1 text-sm">View all registered teams and claim orphaned teams.</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            View all registered teams and claim orphaned teams.
+          </p>
         </div>
 
         <Form method="post">
@@ -84,7 +86,14 @@ export default function AdminTeamsPage() {
             <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
               <div>
                 <div className="flex flex-wrap items-center gap-2">
-                  <h3 className="font-medium">{team.name}</h3>
+                  <h3 className="font-medium">
+                    <Link
+                      to={`/teams/${team.teamId}`}
+                      className="text-primary hover:text-blue-700 hover:underline"
+                    >
+                      {team.name}
+                    </Link>
+                  </h3>
                   {team.orphaned && (
                     <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs font-medium text-amber-700">
                       no team admin
@@ -97,12 +106,8 @@ export default function AdminTeamsPage() {
                 </p>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                <Link to={`/teams/${team.teamId}`} className="link-muted">
-                  View team
-                </Link>
-
-                {team.orphaned && (
+              {team.orphaned && (
+                <div className="flex flex-wrap gap-2">
                   <Form method="post">
                     <input type="hidden" name="intent" value="claim-admin" />
                     <input type="hidden" name="teamId" value={team.teamId} />
@@ -110,8 +115,8 @@ export default function AdminTeamsPage() {
                       Claim admin
                     </button>
                   </Form>
-                )}
-              </div>
+                </div>
+              )}
             </div>
 
             {team.members.length > 0 && (

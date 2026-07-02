@@ -9,6 +9,16 @@ import { SYSTEM_SCHEMA_VERSION, systemMigrations } from './migrations'
 import { type UserRecord, userRecordSchema } from './schemas'
 
 type UserRole = 'app_admin' | 'user'
+export type InviteSource = 'admin' | 'team' | 'session' | 'legacy'
+export type InviteRecord = {
+  token: string
+  email: string
+  invitedBy: string
+  role: UserRole
+  teamId: string | null
+  source: InviteSource
+  expiresAt: number
+}
 type TeamRecord = {
   teamId: string
   name: string
@@ -227,6 +237,7 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
     invitedBy,
     teamId,
     role = 'user',
+    source,
     expiresAt,
   }: {
     token: string
@@ -234,17 +245,98 @@ export class SystemAgent extends BaseWebSocketAgent<SystemAgentEnv, SystemState>
     invitedBy: string
     teamId?: string | null
     role?: UserRole
+    source: InviteSource
     expiresAt: number
   }): Promise<DataResult<void>> {
     this.ctx.storage.sql.exec(
-      `INSERT INTO user_invites (token, email, invited_by, team_id, role, expires_at) VALUES (?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO user_invites (token, email, invited_by, team_id, role, source, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
       token,
       email,
       invitedBy,
       teamId ?? null,
       role,
+      source,
       expiresAt,
     )
+    return dataSuccess()
+  }
+
+  private parseInviteSource(source: unknown): InviteSource {
+    if (source === 'admin' || source === 'team' || source === 'session' || source === 'legacy') {
+      return source
+    }
+    return 'legacy'
+  }
+
+  private rowToInviteRecord(row: Record<string, unknown>): InviteRecord {
+    return {
+      token: row.token as string,
+      email: row.email as string,
+      invitedBy: row.invited_by as string,
+      role: this.parseInviteRole(row.role),
+      teamId: (row.team_id as string | null) ?? null,
+      source: this.parseInviteSource(row.source),
+      expiresAt: Number(row.expires_at),
+    }
+  }
+
+  async listPendingInvites({
+    sources,
+    teamId,
+    platformOnly,
+  }: {
+    sources?: InviteSource[]
+    teamId?: string
+    platformOnly?: boolean
+  } = {}): Promise<DataResult<InviteRecord[]>> {
+    const conditions = ['consumed_at IS NULL']
+    const params: (string | number)[] = []
+
+    if (sources?.length) {
+      conditions.push(`source IN (${sources.map(() => '?').join(', ')})`)
+      params.push(...sources)
+    }
+
+    if (teamId !== undefined) {
+      conditions.push('team_id = ?')
+      params.push(teamId)
+    }
+
+    if (platformOnly) {
+      conditions.push('team_id IS NULL')
+    }
+
+    const rows = this.ctx.storage.sql
+      .exec(`SELECT * FROM user_invites WHERE ${conditions.join(' AND ')} ORDER BY expires_at ASC`, ...params)
+      .toArray()
+
+    return dataSuccess(rows.map((row) => this.rowToInviteRecord(row as Record<string, unknown>)))
+  }
+
+  async getPendingInviteByToken(token: string): Promise<DataResult<InviteRecord | null>> {
+    const row = this.ctx.storage.sql
+      .exec(`SELECT * FROM user_invites WHERE token = ? AND consumed_at IS NULL`, token)
+      .one()
+    if (!row) return dataSuccess(null)
+    return dataSuccess(this.rowToInviteRecord(row as Record<string, unknown>))
+  }
+
+  async revokeInvite(token: string): Promise<DataResult<void>> {
+    const result = this.ctx.storage.sql.exec(
+      `DELETE FROM user_invites WHERE token = ? AND consumed_at IS NULL`,
+      token,
+    )
+    if (result.rowsWritten === 0) return dataError('Invalid invite')
+    return dataSuccess()
+  }
+
+  async resetInviteExpiry(token: string, expiresAt: number): Promise<DataResult<void>> {
+    const result = this.ctx.storage.sql.exec(
+      `UPDATE user_invites SET expires_at = ? WHERE token = ? AND consumed_at IS NULL`,
+      expiresAt,
+      token,
+    )
+    if (result.rowsWritten === 0) return dataError('Invalid invite')
     return dataSuccess()
   }
 

@@ -1,4 +1,4 @@
-export { SystemAgent } from './src/system/system.agent'
+export { SystemAgent, type InviteRecord, type InviteSource } from './src/system/system.agent'
 export { UserAgent } from './src/user/user.agent'
 export { TeamAgent } from './src/team/team.agent'
 export { TimelineSessionAgent } from './src/timeline-session/timeline-session.agent'

@@ -1,14 +1,21 @@
-import { useEffect, useState } from 'react'
-import { Form, Link, redirect, useLoaderData, useSearchParams } from 'react-router'
+import { useEffect, useMemo } from 'react'
+import { Form, Link, redirect, useLoaderData, useNavigation, useSearchParams } from 'react-router'
 import { sendEmail, teamInviteEmail } from 'email'
 import { toast } from 'sonner'
 
+import { Button } from '~/components/ui/button'
+import { PendingInviteRow } from '../components/admin/pending-invite-row'
 import { getSystemAgent } from '../data/agents.server'
 import {
-  requireTeamAdminOrAppAdmin,
-  requireTeamMemberOrAppAdmin,
-} from '../data/team-auth.server'
+  isTeamScopedInvite,
+  loadTeamPendingInvites,
+  resendTeamInvite,
+  revokeScopedInvite,
+} from '../data/pending-invites.server'
+import { requireTeamAdminOrAppAdmin, requireTeamMemberOrAppAdmin } from '../data/team-auth.server'
 import { userContext } from '../middleware/auth'
+import { getInviteExpiresAt } from '../utils/invite-expiry'
+import { compareEmails } from '../utils/sort-by-email'
 import type { Route } from './+types/teams.$teamId'
 
 export const loader = async ({ params, context }: Route.LoaderArgs) => {
@@ -17,15 +24,18 @@ export const loader = async ({ params, context }: Route.LoaderArgs) => {
   const team = await requireTeamMemberOrAppAdmin({ env, teamId: params.teamId!, user })
 
   const data = await team.getTeamData()
+  const system = await getSystemAgent(env)
 
   if (!data.ok) throw new Response('Not found', { status: 404 })
 
   const role = await team.getMemberRole(user.email)
+  const pendingInvites = await loadTeamPendingInvites(system, params.teamId!)
 
   return {
     ...data.body,
     isAdmin: role === 'admin',
     isAppAdmin: user.role === 'app_admin',
+    pendingInvites,
   }
 }
 
@@ -40,11 +50,11 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
 
   const teamId = params.teamId!
 
+  const system = await getSystemAgent(env)
+
   if (intent === 'invite') {
     const team = await requireTeamAdminOrAppAdmin({ env, teamId, user })
     const email = String(formData.get('email'))
-
-    const system = await getSystemAgent(env)
 
     const existing = await system.getUserByEmail(email)
 
@@ -54,14 +64,14 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
     }
 
     const token = crypto.randomUUID()
-
-    const expiresAt = Math.floor(Date.now() / 1000) + 60 * 60 * 24 * 7
+    const expiresAt = getInviteExpiresAt()
 
     await system.createInvite({
       token,
       email,
       invitedBy: user.email,
       teamId,
+      source: 'team',
       expiresAt,
     })
 
@@ -84,7 +94,31 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
       env,
     )
 
-    throw redirect(`/teams/${teamId}?invited=${encodeURIComponent(email)}`)
+    throw redirect(`/teams/${teamId}`)
+  }
+
+  if (intent === 'resend-invite') {
+    await requireTeamAdminOrAppAdmin({ env, teamId, user })
+    await resendTeamInvite({
+      system,
+      token: String(formData.get('token')),
+      teamId,
+      invitedByEmail: user.email,
+      teamName: String(formData.get('teamName') ?? 'team'),
+      env,
+      requestUrl: request.url,
+    })
+    throw redirect(`/teams/${teamId}`)
+  }
+
+  if (intent === 'revoke-invite') {
+    await requireTeamAdminOrAppAdmin({ env, teamId, user })
+    await revokeScopedInvite({
+      system,
+      token: String(formData.get('token')),
+      isAllowed: (invite) => isTeamScopedInvite(invite, teamId),
+    })
+    throw redirect(`/teams/${teamId}`)
   }
 
   if (intent === 'remove') {
@@ -110,26 +144,20 @@ export const action = async ({ request, context, params }: Route.ActionArgs) => 
 
 function useTeamActionFeedback() {
   const [searchParams, setSearchParams] = useSearchParams()
-  const [inviteFormKey, setInviteFormKey] = useState(0)
 
   useEffect(() => {
-    const invited = searchParams.get('invited')
     const added = searchParams.get('added')
     const removed = searchParams.get('removed')
     const updated = searchParams.get('updated')
 
-    if (!invited && !added && !removed && !updated) return
+    if (!added && !removed && !updated) return
 
-    if (invited) toast.success(`Invite sent to ${invited}`)
     if (added) toast.success(`${added} was added to the team`)
     if (removed) toast.success(`${removed} was removed from the team`)
     if (updated) toast.success(`${updated}'s team role was updated`)
 
-    if (invited || added) setInviteFormKey((key) => key + 1)
-
     setSearchParams(
       (prev) => {
-        prev.delete('invited')
         prev.delete('added')
         prev.delete('removed')
         prev.delete('updated')
@@ -138,14 +166,28 @@ function useTeamActionFeedback() {
       { replace: true },
     )
   }, [searchParams, setSearchParams])
-
-  return inviteFormKey
 }
 
 export default function TeamDetailPage() {
   const team = useLoaderData<typeof loader>()
+  const navigation = useNavigation()
+  const isInviting = navigation.state === 'submitting' && navigation.formData?.get('intent') === 'invite'
 
-  const inviteFormKey = useTeamActionFeedback()
+  useTeamActionFeedback()
+
+  const memberListItems = useMemo(
+    () =>
+      [
+        ...team.pendingInvites.map((invite) => ({ kind: 'invite' as const, invite })),
+        ...team.members.map((member) => ({ kind: 'member' as const, member })),
+      ].sort((a, b) =>
+        compareEmails(
+          a.kind === 'invite' ? a.invite.email : String(a.member.email),
+          b.kind === 'invite' ? b.invite.email : String(b.member.email),
+        ),
+      ),
+    [team.pendingInvites, team.members],
+  )
 
   return (
     <div className="page-narrow">
@@ -167,66 +209,76 @@ export default function TeamDetailPage() {
         </div>
       </dl>
 
-      <h2 className="mb-3 font-medium">Members</h2>
-
-      <ul className="mb-8 grid gap-2">
-        {team.members.map((member) => (
-          <li key={String(member.email)} className="list-row flex items-center justify-between py-2">
-            <span>
-              {String(member.email)}{' '}
-              <span className="text-muted-foreground text-xs">({String(member.role)})</span>
-            </span>
-
-            <div className="flex gap-2">
-              {team.isAppAdmin && (
-                member.role === 'admin' ? (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="demote-member" />
-                    <input type="hidden" name="email" value={String(member.email)} />
-                    <button type="submit" className="link-muted">
-                      Make member
-                    </button>
-                  </Form>
-                ) : (
-                  <Form method="post">
-                    <input type="hidden" name="intent" value="promote-member" />
-                    <input type="hidden" name="email" value={String(member.email)} />
-                    <button type="submit" className="link-muted">
-                      Make admin
-                    </button>
-                  </Form>
-                )
-              )}
-
-              {(team.isAdmin || team.isAppAdmin) && member.role !== 'admin' && (
-                <Form method="post">
-                  <input type="hidden" name="intent" value="remove" />
-
-                  <input type="hidden" name="email" value={String(member.email)} />
-
-                  <button type="submit" className="link-muted">
-                    Remove
-                  </button>
-                </Form>
-              )}
-            </div>
-          </li>
-        ))}
-      </ul>
-
       {(team.isAdmin || team.isAppAdmin) && (
-        <Form key={inviteFormKey} method="post" className="flex gap-2">
+        <Form
+          method="post"
+          className="mb-8 flex flex-col gap-3 rounded-lg border p-4 sm:flex-row sm:items-center"
+        >
           <input type="hidden" name="intent" value="invite" />
 
           <input type="hidden" name="teamName" value={String(team.name)} />
 
           <input name="email" type="email" required placeholder="Invite by email" className="field flex-1" />
 
-          <button type="submit" className="btn btn-primary">
-            Invite
-          </button>
+          <Button type="submit" className="shrink-0" disabled={isInviting}>
+            {isInviting ? 'Sending…' : 'Invite'}
+          </Button>
         </Form>
       )}
+
+      <h2 className="mb-3 font-medium">Members</h2>
+
+      <ul className="mb-8 grid gap-2">
+        {memberListItems.map((item) => {
+          if (item.kind === 'invite') {
+            return <PendingInviteRow key={item.invite.token} invite={item.invite} teamName={String(team.name)} />
+          }
+
+          const member = item.member
+
+          return (
+            <li key={String(member.email)} className="list-row flex items-center justify-between py-2">
+              <span>
+                {String(member.email)}{' '}
+                <span className="text-muted-foreground text-xs">({String(member.role)})</span>
+              </span>
+
+              <div className="flex gap-2">
+                {team.isAppAdmin &&
+                  (member.role === 'admin' ? (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="demote-member" />
+                      <input type="hidden" name="email" value={String(member.email)} />
+                      <button type="submit" className="link-muted">
+                        Make member
+                      </button>
+                    </Form>
+                  ) : (
+                    <Form method="post">
+                      <input type="hidden" name="intent" value="promote-member" />
+                      <input type="hidden" name="email" value={String(member.email)} />
+                      <button type="submit" className="link-muted">
+                        Make admin
+                      </button>
+                    </Form>
+                  ))}
+
+                {(team.isAdmin || team.isAppAdmin) && member.role !== 'admin' && (
+                  <Form method="post">
+                    <input type="hidden" name="intent" value="remove" />
+
+                    <input type="hidden" name="email" value={String(member.email)} />
+
+                    <button type="submit" className="link-muted">
+                      Remove
+                    </button>
+                  </Form>
+                )}
+              </div>
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }
